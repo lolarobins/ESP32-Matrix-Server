@@ -11,7 +11,7 @@ import (
 	"image/draw"
 	"image/gif"
 	_ "image/jpeg"
-	_ "image/png"
+	"image/png"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -124,10 +124,6 @@ func (m *MatrixPanel) SaveConfig() error {
 }
 
 func (m *MatrixPanel) Print(msg string) error {
-	if err := m.Clear(); err != nil {
-		return err
-	}
-
 	m.Context.SetColor(color.Black)
 	m.Context.Clear()
 	m.Context.SetColor(color.White)
@@ -152,7 +148,7 @@ func (m *MatrixPanel) FillImage(filepath string) error {
 
 	var gifimg *gif.GIF // try and decode gif first, if not gif, move to reg image
 	if gifimg, err = gif.DecodeAll(buf); err == nil {
-		m.RenderGIF(*gifimg)
+		m.RenderGIF(strings.ReplaceAll(filepath, "/", "_"), *gifimg)
 		return nil
 	}
 
@@ -199,7 +195,7 @@ func getGifDimensions(gif *gif.GIF) (x int, y int) {
 	return highestX - lowestX, highestY - lowestY
 }
 
-func (m *MatrixPanel) RenderGIF(img gif.GIF) {
+func (m *MatrixPanel) RenderGIF(cache string, img gif.GIF) {
 	m.animation = false
 
 	go func() {
@@ -209,14 +205,37 @@ func (m *MatrixPanel) RenderGIF(img gif.GIF) {
 		width, height := getGifDimensions(&img)
 		images := make([]*image.RGBA, len(img.Image))
 
-		for i := 0; i < len(img.Image); i++ {
-			m.Print("Decoding\n" + strconv.Itoa(i) + "/" + strconv.Itoa(len(img.Image)))
+		// decode if needed, else read cache
+		files, err := os.ReadDir("cache/" + cache)
+		if err != nil || len(files) != len(img.Image) {
+			os.RemoveAll("cache/" + cache)    // remove all previous
+			os.MkdirAll("cache/"+cache, 0777) // create new
 
-			images[i] = image.NewRGBA(image.Rect(0, 0, width, height))
-			draw.Draw(images[i], images[i].Bounds(), img.Image[0], image.Point{X: 0, Y: 0}, draw.Src)
+			for i := 0; i < len(img.Image); i++ {
+				m.Print("Decoding & caching GIF\n" + strconv.Itoa(i) + "/" + strconv.Itoa(len(img.Image)))
 
-			for j := 0; j < i; j++ {
-				draw.Draw(images[i], images[i].Bounds(), img.Image[j], image.Point{X: 0, Y: 0}, draw.Over)
+				images[i] = image.NewRGBA(image.Rect(0, 0, width, height))
+				draw.Draw(images[i], images[i].Bounds(), img.Image[0], image.Point{X: 0, Y: 0}, draw.Src)
+
+				for j := 0; j < i; j++ {
+					draw.Draw(images[i], images[i].Bounds(), img.Image[j], image.Point{X: 0, Y: 0}, draw.Over)
+				}
+
+				buffer := new(bytes.Buffer)
+				err = png.Encode(buffer, images[i])
+				if err != nil {
+					m.Print("Decoding error")
+				}
+
+				os.WriteFile("cache/"+cache+"/"+strconv.Itoa(i)+".png", buffer.Bytes(), 0777)
+			}
+		} else {
+			for i := 0; i < len(img.Image); i++ {
+				data, _ := os.ReadFile("cache/" + cache + "/" + strconv.Itoa(i) + ".png")
+
+				img, _ := png.Decode(bytes.NewReader(data))
+				images[i] = image.NewRGBA(image.Rect(0, 0, width, height))
+				draw.Draw(images[i], images[i].Bounds(), img, image.Point{X: 0, Y: 0}, draw.Src)
 			}
 		}
 
