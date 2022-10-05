@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"image"
+	"image/draw"
 	"image/gif"
 	"io"
 	"mime/multipart"
@@ -158,11 +159,49 @@ func (m *MatrixPanel) FillImage(filepath string) error {
 	return err
 }
 
+func getGifDimensions(gif *gif.GIF) (x int, y int) {
+	var lowestX int
+	var lowestY int
+	var highestX int
+	var highestY int
+
+	for _, img := range gif.Image {
+		if img.Rect.Min.X < lowestX {
+			lowestX = img.Rect.Min.X
+		}
+		if img.Rect.Min.Y < lowestY {
+			lowestY = img.Rect.Min.Y
+		}
+		if img.Rect.Max.X > highestX {
+			highestX = img.Rect.Max.X
+		}
+		if img.Rect.Max.Y > highestY {
+			highestY = img.Rect.Max.Y
+		}
+	}
+
+	return highestX - lowestX, highestY - lowestY
+}
+
 func (m *MatrixPanel) RenderGIF(img gif.GIF) {
+	// decode frames https://stackoverflow.com/questions/33295023/how-to-split-gif-into-images
 	m.animation = false
 	go func() {
 		m.animmutex.Lock()
 		m.animation = true
+
+		// decode frames (takes a seconding)
+		width, height := getGifDimensions(&img)
+		images := make([]*image.RGBA, len(img.Image))
+
+		for i := 0; i < len(img.Image); i++ {
+			images[i] = image.NewRGBA(image.Rect(0, 0, width, height))
+			draw.Draw(images[i], images[i].Bounds(), img.Image[0], image.Point{X: 0, Y: 0}, draw.Src)
+
+			for j := 0; j < i; j++ {
+				draw.Draw(images[i], images[i].Bounds(), img.Image[j], image.Point{X: 0, Y: 0}, draw.Over)
+			}
+		}
 
 		var current, last int64
 		for i, loops := 0, 0; m.animation; {
@@ -180,7 +219,7 @@ func (m *MatrixPanel) RenderGIF(img gif.GIF) {
 				loops++
 			}
 
-			resized := resize.Resize(uint(m.Width), uint(m.Height), img.Image[i], resize.Lanczos3)
+			resized := resize.Resize(uint(m.Width), uint(m.Height), images[i], resize.Lanczos3)
 			m.Context.DrawImage(resized, 0, 0) // resize to fit display
 
 			m.Draw()
