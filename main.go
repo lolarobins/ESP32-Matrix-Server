@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -58,14 +57,7 @@ func main() {
 	http.HandleFunc("/selection", webapi.HTTPSelectionHandler)
 	http.HandleFunc("/upload", webapi.HTTPUploadHandler)
 
-	go http.ListenAndServe(Config.WebIP+":"+strconv.Itoa(Config.WebPort), nil)
-
-	// listen for input to exit/manage matrix
-	println("Launched Matrix32 server. Press ENTER to exit.")
-	scanner := bufio.NewScanner(bufio.NewReader(os.Stdin))
-	for scanner.Scan() {
-		return
-	}
+	println(http.ListenAndServe(Config.WebIP+":"+strconv.Itoa(Config.WebPort), nil).Error())
 }
 
 func (p *Properties) save() error {
