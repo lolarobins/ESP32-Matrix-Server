@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -78,7 +81,6 @@ func LoadPanels() error {
 			panel.Context = gg.NewContext(int(panel.Width), int(panel.Height))
 			panel.animmutex = &sync.Mutex{}
 
-			println("Loaded panel " + id)
 			Panels[id] = panel
 		}
 	} else if !os.IsNotExist(err) {
@@ -120,6 +122,24 @@ func (m *MatrixPanel) SaveConfig() error {
 	return nil
 }
 
+func (m *MatrixPanel) Print(msg string) error {
+	if err := m.Clear(); err != nil {
+		return err
+	}
+
+	m.Context.SetColor(color.Black)
+	m.Context.Clear()
+	m.Context.SetColor(color.White)
+	m.Context.DrawStringWrapped(msg, float64(m.Width/2), float64(m.Height/2), 0.5, 0.5, float64(m.Width), 1.0, gg.AlignCenter) // draws centred
+	m.Context.SetColor(color.Black)
+
+	err := m.Draw()
+	if err != nil {
+		println(err.Error())
+	}
+	return err
+}
+
 func (m *MatrixPanel) FillImage(filepath string) error {
 	data, err := os.ReadFile(filepath)
 	if err != nil {
@@ -129,32 +149,26 @@ func (m *MatrixPanel) FillImage(filepath string) error {
 	buf := bytes.NewBuffer(data)
 	var img image.Image
 
-	split := strings.Split(filepath, ".")
-
-	switch strings.ToLower(split[len(split)-1]) { // extension getting
-
-	case "gif":
-		var gifimg *gif.GIF
-		if gifimg, err = gif.DecodeAll(buf); err != nil {
-			return err
-		}
-
+	var gifimg *gif.GIF // try and decode gif first, if not gif, move to reg image
+	if gifimg, err = gif.DecodeAll(buf); err == nil {
 		m.RenderGIF(*gifimg)
 		return nil
-	default:
-		m.animation = false // stop animation and wait for it to finish
-		m.animmutex.Lock()
-		if img, _, err = image.Decode(buf); err != nil {
-			return err
-		}
 	}
+
+	if img, _, err = image.Decode(buf); err != nil {
+		return err
+	}
+
+	if m.InAnimation() {
+		m.StopAnimation()
+	}
+
+	m.Clear()
 
 	resized := resize.Resize(uint(m.Width), uint(m.Height), img, resize.Bilinear)
 	m.Context.DrawImage(resized, 0, 0) // resize to fit display
 
 	err = m.Draw()
-
-	m.animmutex.Unlock()
 
 	return err
 }
@@ -184,13 +198,14 @@ func getGifDimensions(gif *gif.GIF) (x int, y int) {
 }
 
 func (m *MatrixPanel) RenderGIF(img gif.GIF) {
-	// decode frames https://stackoverflow.com/questions/33295023/how-to-split-gif-into-images
 	m.animation = false
+
 	go func() {
 		m.animmutex.Lock()
 		m.animation = true
 
-		// decode frames (takes a seconding)
+		m.Print("Decoding\nGIF")
+
 		width, height := getGifDimensions(&img)
 		images := make([]*image.RGBA, len(img.Image))
 
@@ -230,6 +245,16 @@ func (m *MatrixPanel) RenderGIF(img gif.GIF) {
 
 		m.animmutex.Unlock()
 	}()
+}
+
+func (m *MatrixPanel) InAnimation() bool {
+	return m.animation
+}
+
+func (m *MatrixPanel) StopAnimation() {
+	m.animation = false // stop animation and wait for it to finish
+	m.animmutex.Lock()
+	go m.animmutex.Unlock()
 }
 
 // draw the current canvas to the screen
@@ -272,7 +297,7 @@ func (m *MatrixPanel) Draw() error {
 	return nil
 }
 
-// clears the screen of the panel
+// clears the screen of the panel, and canvas
 func (m *MatrixPanel) Clear() error {
 	resp, err := http.Get("http://" + m.Address + "/clear")
 

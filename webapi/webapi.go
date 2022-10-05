@@ -62,7 +62,7 @@ func HTTPSelectionHandler(w http.ResponseWriter, r *http.Request) {
 	// get panel
 	panel, assigned := matrix.Panels[r.FormValue("panel")]
 	if !assigned {
-		response = strings.ReplaceAll(response, "{MSG}", "Error: Panel not found.")
+		response = strings.ReplaceAll(response, "{MSG}", "Error: panel not found")
 		io.WriteString(w, response)
 		return
 	}
