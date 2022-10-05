@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+
+	"lolarobins.ca/esp32-matrix-server/matrix"
+	"lolarobins.ca/esp32-matrix-server/webapi"
 )
 
 type Properties struct {
@@ -39,25 +42,26 @@ func main() {
 		return
 	}
 
-	err = Config.save()
-	if err != nil {
+	if err = Config.save(); err != nil {
 		println("saving config:" + err.Error())
 		return
 	}
 
 	// load panels
-	if err != nil {
-		println("loading nodes: " + err.Error())
+	if err = matrix.LoadPanels(); err != nil {
+		println("loading panels: " + err.Error())
 		return
 	}
 
 	// register web api and webserver
-	http.Handle("/", http.FileServer(http.Dir("web")))
+	http.HandleFunc("/", webapi.HTTPMainHandler)
+	http.HandleFunc("/selection", webapi.HTTPSelectionHandler)
+	http.HandleFunc("/upload", webapi.HTTPUploadHandler)
 
 	go http.ListenAndServe(Config.WebIP+":"+strconv.Itoa(Config.WebPort), nil)
 
 	// listen for input to exit/manage matrix
-	println("Launched Matrix32 Server started. Press ENTER to exit.")
+	println("Launched Matrix32 server. Press ENTER to exit.")
 	scanner := bufio.NewScanner(bufio.NewReader(os.Stdin))
 	for scanner.Scan() {
 		return

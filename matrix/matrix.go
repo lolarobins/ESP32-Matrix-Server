@@ -31,13 +31,15 @@ type MatrixPanel struct {
 	Height uint8 `json:"height"`
 	// context used when calling draw
 	Context *gg.Context `json:"-"`
+	// store own id
+	Id string `json:"-"`
 
 	// animation handling
 	animation bool
 	animmutex *sync.Mutex
 }
 
-var panels = make(map[string]*MatrixPanel)
+var Panels = make(map[string]*MatrixPanel)
 
 func LoadPanels() error {
 	// load panels
@@ -49,21 +51,34 @@ func LoadPanels() error {
 
 		for _, f := range files {
 			// ignore dotfiles, non-directories
-			if strings.HasPrefix(f.Name(), ".") || !f.IsDir() {
+			if strings.HasPrefix(f.Name(), ".") || f.IsDir() {
 				continue
 			}
 
-			data, err := os.ReadFile("panels" + f.Name())
+			data, err := os.ReadFile("panels/" + f.Name())
 			if err != nil {
 				println(f.Name() + ": " + err.Error())
 			}
 
+			// define and set id
 			panel := new(MatrixPanel)
+			id := strings.TrimSuffix(f.Name(), ".json")
+			panel.Id = id
+
 			if err := json.Unmarshal(data, panel); err != nil {
-				println(f.Name() + ": " + err.Error())
+				println(id + " panel: " + err.Error())
 			}
 
-			panels[(f.Name())] = panel
+			if err := panel.SaveConfig(); err != nil {
+				println(id + " panel: " + err.Error())
+			}
+
+			// non-json defaults
+			panel.Context = gg.NewContext(int(panel.Width), int(panel.Height))
+			panel.animmutex = &sync.Mutex{}
+
+			println("Loaded panel " + id)
+			Panels[id] = panel
 		}
 	} else if !os.IsNotExist(err) {
 		return err
@@ -74,14 +89,34 @@ func LoadPanels() error {
 	return nil
 }
 
-func NewPanel(address string, w uint8, h uint8) MatrixPanel {
-	return MatrixPanel{
+func NewPanel(id string, address string, w uint8, h uint8) (MatrixPanel, error) {
+	panel := MatrixPanel{
 		Address:   address,
 		Width:     w,
 		Height:    h,
 		Context:   gg.NewContext(int(w), int(h)),
+		Id:        id,
 		animmutex: &sync.Mutex{},
 	}
+
+	if err := panel.SaveConfig(); err != nil {
+		return panel, err
+	}
+
+	return panel, nil
+}
+
+func (m *MatrixPanel) SaveConfig() error {
+	data, err := json.MarshalIndent(m, "", "    ")
+	if err != nil {
+		return errors.New("error marshalling JSON to output to file")
+	}
+
+	if err := os.WriteFile("panels/"+m.Id+".json", data, 0777); err != nil {
+		return errors.New("could not write to file 'panels/" + m.Id + ".json'")
+	}
+
+	return nil
 }
 
 func (m *MatrixPanel) FillImage(filepath string) error {
