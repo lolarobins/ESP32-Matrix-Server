@@ -16,6 +16,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -166,6 +167,7 @@ func (m *MatrixPanel) FillImage(filepath string) error {
 	m.Clear()
 
 	resized := resize.Resize(uint(m.Width), uint(m.Height), img, resize.Bilinear)
+	m.Context.Clear()
 	m.Context.DrawImage(resized, 0, 0) // resize to fit display
 
 	err = m.Draw()
@@ -204,12 +206,12 @@ func (m *MatrixPanel) RenderGIF(img gif.GIF) {
 		m.animmutex.Lock()
 		m.animation = true
 
-		m.Print("Decoding\nGIF")
-
 		width, height := getGifDimensions(&img)
 		images := make([]*image.RGBA, len(img.Image))
 
 		for i := 0; i < len(img.Image); i++ {
+			m.Print("Decoding\n" + strconv.Itoa(i) + "/" + strconv.Itoa(len(img.Image)))
+
 			images[i] = image.NewRGBA(image.Rect(0, 0, width, height))
 			draw.Draw(images[i], images[i].Bounds(), img.Image[0], image.Point{X: 0, Y: 0}, draw.Src)
 
@@ -235,6 +237,7 @@ func (m *MatrixPanel) RenderGIF(img gif.GIF) {
 			}
 
 			resized := resize.Resize(uint(m.Width), uint(m.Height), images[i], resize.Lanczos3)
+			m.Context.Clear()
 			m.Context.DrawImage(resized, 0, 0) // resize to fit display
 
 			m.Draw()
